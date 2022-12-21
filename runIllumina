@@ -1,0 +1,6 @@
+#!/bin/bash
+INPUT_FILE_DIR=$1
+MANIFEST=$2
+GENOME=$3
+CHUNKS=$4
+sbatch --mem=72GB --cpus-per-task=4 --time=3-0 --mail-user=daniel.snellings@childrens.harvard.edu --mail-type=ALL --wrap="~/scripts/illumina2vcf $INPUT_FILE_DIR $MANIFEST $GENOME $CHUNKS"

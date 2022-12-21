@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH --job-name=postPhaseMerge
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=64GB
+#SBATCH --time=2-0
+
+DIR=$1
+PFX=$(echo $DIR | sed 's/analysis_//g')
+PFX=$(basename $PFX /)
+bcftools concat --no-version -Ob "$DIR"/*.pgt.bcf | tee "$PFX".pgt.bcf | bcftools index --force --output "$PFX".pgt.bcf.csi
+bcftools annotate --no-version -Ob --annotations "$PFX".pgt.bcf --columns -FMT/GT "$PFX"_nomissing.bcf | tee "$PFX"_anno.pgt.bcf | bcftools index --force --output "$PFX"_anno.pgt.bcf.csi
+
+bcftools +mocha -g GRCh38 -o "$PFX".mocha.bcf -Ob -c "$PFX"_mocha_calls.tsv -z "$PFX"_mocha_stats.tsv "$PFX"_anno.pgt.bcf
+bcftools index "$PFX".mocha.bcf
+
+awk -F "\t" 'NR==FNR && FNR==1 {for (i=1; i<=NF; i++) f[$i] = i}
+  NR==FNR && FNR>1 && ($(f["call_rate"])<.97 || $(f["baf_auto"])>.03) {xcl[$(f["sample_id"])]++}
+  NR>FNR && FNR==1 {for (i=1; i<=NF; i++) g[$i] = i; print}
+  NR>FNR && FNR>1 {gender=$(g["computed_gender"]); len=$(g["length"]); bdev=$(g["bdev"]);
+  rel_cov=$(g["rel_cov"]); lod_baf_phase=$(g["lod_baf_phase"]); lod_baf_conc=$(g["lod_baf_conc"])}
+  NR>FNR && FNR>1 && !($(g["sample_id"]) in xcl) && $(g["type"])!~"^CNP" &&
+    ( $(g["chrom"])~"X" && gender=="M" || bdev<0.1 || $(g["n50_hets"])<2e5 || lod_baf_conc!="nan" && lod_baf_conc>10.0 ) &&
+    ( $(g["bdev_se"])!="nan" || lod_baf_phase!="nan" && lod_baf_phase>10.0 ) &&
+    ( rel_cov<2.1 || bdev<0.05 || len>5e5 && bdev<0.1 && rel_cov<2.5 || len>5e6 && bdev<0.15 )'   "$PFX"_mocha_stats.tsv "$PFX"_mocha_calls.tsv > "$PFX"_mocha_calls_filtered.tsv

@@ -1,0 +1,3 @@
+#!/bin/bash
+INPUT_FILE_DIR=$1
+sbatch --mem=64GB --cpus-per-task=4 --time=4-0 --mail-user=daniel.snellings@childrens.harvard.edu --mail-type=ALL --wrap="~/scripts/affy2vcf_GenomeWideSNP_5 $INPUT_FILE_DIR"

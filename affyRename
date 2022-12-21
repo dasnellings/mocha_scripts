@@ -1,0 +1,5 @@
+#!/bin/bash
+for file in *.cel; do 
+	name=$(echo $file | sed 's/.cel/.CEL/g')
+	mv $file $name
+done

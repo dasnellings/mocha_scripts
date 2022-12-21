@@ -1,0 +1,41 @@
+#!/bin/bash
+#SBATCH --job-name=scatterVcf
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=32GB
+#SBATCH --time=4-0
+
+FILE=$1
+PFX=$( basename $FILE .vcf.gz )
+PFX=$( basename $PFX .bcf )
+MAP="/home/daniels/resources/hg38_mocha/genetic_map_hg38_withX.txt.gz"
+panel_pfx="/home/daniels/resources/hg38_mocha/CCDG_14151_B01_GRM_WGS_2020-08-05_chr"
+panel_sfx=".filtered.phased"
+
+mkdir analysis_"$PFX"
+OUT="analysis_$PFX"
+mkdir "$OUT"/vcfByChr
+
+bcftools filter -Ob -o "$PFX"_nomissing.bcf -i 'GT!="."' $FILE
+bcftools index "$PFX"_nomissing.bcf
+bcftools +/home/daniels/tools/bcftools/plugins/scatter.so \
+	"$PFX"_nomissing.bcf \
+	--no-version \
+	-Ob \
+	--output "$OUT"/vcfByChr \
+	--scatter $(echo chr{{1..22},X} | tr ' ' ',')
+
+#cd "$OUT"/vcfByChr
+
+for chr in {1..22} X; do
+	bcftools index "$OUT"/vcfByChr/chr$chr.bcf
+	zcat $MAP | sed 's/^23/X/' | awk -v chr=$chr '$1==chr {print $2,$3,$4}' > $OUT/genetic_map.chr$chr.txt
+
+	sbatch --mem=80GB --cpus-per-task=12 --time=3-0 --wrap="/home/daniels/bin/shapeit4 \
+    		--thread 1 \
+    		--input "$OUT"/vcfByChr/chr$chr.bcf \
+    		--reference $panel_pfx${chr}$panel_sfx.bcf \
+    		--map $OUT/genetic_map.chr$chr.txt \
+    		--region chr$chr \
+    		--output $OUT/chr$chr.pgt.bcf"
+done

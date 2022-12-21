@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --job-name=plotCalls
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=8GB
+#SBATCH --time=4-0
+
+CALLS=$1
+STATS="../merged.stats"
+BCF="../mocha_merge.bcf"
+
+module load 2019
+module load R/3.5.1-foss-2019b
+mkdir pdfs
+while IFS= read -r line; do
+	echo $line
+	SAMPLE=$(echo $line | cut -d' ' -f1)
+	CHR=$(echo $line | cut -d' ' -f3)
+	START=$(echo $line | cut -d' ' -f4)
+	END=$(echo $line | cut -d' ' -f5)
+	mkdir pdfs/"$CHR"
+	echo $SAMPLE $CHR $START $END
+	mocha_plot.R --mocha \
+	--vcf $BCF \
+	--stats $STATS \
+	--pdf pdfs/"$CHR"/"$CHR"_"$START"_"$END"_"$SAMPLE".pdf \
+	--cytoband ~/resources/hg38_mocha/cytoBand.txt.gz \
+	--samples $SAMPLE \
+	--region "$CHR":"$START"-"$END";
+done < $CALLS

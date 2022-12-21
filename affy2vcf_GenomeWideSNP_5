@@ -1,0 +1,47 @@
+#!/bin/bash
+INPUT_FILE_DIR=$1
+
+/home/daniels/tools/affyPowerTools/apt_2.11.4_linux_64_bit_x86_binaries/bin/apt-probeset-genotype \
+	-c /home/pgccnv/somaticcnv_daniels/resources/affy/apt_files/GenomeWideSNP_5.Full.cdf \
+	-o apt_output_$INPUT_FILE_DIR \
+	--write-prior \
+	--write-models \
+	--write-profile \
+	--summaries \
+	-f \
+	--chrX-snps /home/pgccnv/somaticcnv_daniels/resources/affy/apt_files/GenomeWideSNP_5.Full.chrx \
+	"$INPUT_FILE_DIR"/*.cel
+
+~/bin/bcftools +affy2vcf \
+	--csv /home/pgccnv/somaticcnv_daniels/resources/affy/GenomeWideSNP_5.na35.annot.csv \
+	--fasta-ref /home/pgccnv/somaticcnv_daniels/resources/hg19/hg19.fa \
+	--calls apt_output_$INPUT_FILE_DIR/brlmm.calls.txt \
+	--confidences apt_output_$INPUT_FILE_DIR/brlmm.confidences.txt \
+	--summary apt_output_$INPUT_FILE_DIR/brlmm.summary.txt \
+	--snp apt_output_$INPUT_FILE_DIR/brlmm.snp-models.txt \
+	--output apt_output_$INPUT_FILE_DIR/affy_hg19.vcf.gz \
+	-Oz
+
+#gzip apt_output/affy_hg19.vcf
+
+~/go/bin/liftCoordinates \
+	-swapAlleleAB \
+	-faFile /home/pgccnv/somaticcnv_daniels/resources/hg38/hg38.fa \
+	/home/pgccnv/somaticcnv_daniels/resources/chains/hg19ToHg38.over.chain.gz \
+	apt_output_$INPUT_FILE_DIR/affy_hg19.vcf.gz \
+	apt_output_$INPUT_FILE_DIR/affy_hg38.vcf.gz \
+	apt_output_$INPUT_FILE_DIR/liftover.log
+
+if [ $? -eq 0 ]; then
+	origLines=$(wc -l apt_output_$INPUT_FILE_DIR/affy_hg19.vcf)
+	liftLines=$(zcat apt_output_$INPUT_FILE_DIR/affy_hg38.vcf.gz | wc -l)
+	echo "Before liftover: $origLines records"
+	echo "After  liftover: $liftLines records"
+	rm apt_output_$INPUT_FILE_DIR/affy_hg19.vcf.gz
+else
+	exit 1
+fi
+
+~/bin/bcftools sort -Oz -o apt_output_$INPUT_FILE_DIR/tmp.vcf.gz  apt_output_$INPUT_FILE_DIR/affy_hg38.vcf.gz
+mv apt_output_$INPUT_FILE_DIR/tmp.vcf.gz apt_output_$INPUT_FILE_DIR/affy_hg38.vcf.gz
+~/bin/bcftools index apt_output_$INPUT_FILE_DIR/affy_hg38.vcf.gz

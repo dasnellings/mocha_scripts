@@ -1,0 +1,63 @@
+#!/bin/bash
+INPUT_FILE_DIR=$1
+MANIFEST=$2
+GENOME=$3
+CHUNKS=$4
+
+CHAIN=""
+FASTA=""
+
+if [ "$GENOME" = "hg19" ]; then
+	CHAIN="/home/pgccnv/somaticcnv_daniels/resources/chains/hg19ToHg38.over.chain.gz"
+	FASTA="/home/pgccnv/somaticcnv_daniels/resources/hg19/hg19.fa"
+elif [ "$GENOME" = "hg18" ]; then
+	CHAIN="/home/pgccnv/somaticcnv_daniels/resources/chains/hg18ToHg38.over.chain.gz"
+	FASTA="/home/pgccnv/somaticcnv_daniels/resources/hg38/hg38.fa"
+elif [ "$GENOME" = "hg17" ]; then
+	CHAIN="/home/pgccnv/somaticcnv_daniels/resources/hg17/hg17ToHg38.over.chain.gz"
+	FASTA="/home/pgccnv/somaticcnv_daniels/resources/hg17/hg17.fa"
+else
+	echo "Must input hg19 or hg18 or hg17"
+	exit 1
+fi
+
+ls "$INPUT_FILE_DIR"* > tmp
+split -n l/"$CHUNKS" tmp illumina2vcf_tmp_
+
+
+for file in illumina2vcf_tmp_*; do
+	FILES_IN_DIR=$(cat $file | tr '\n' ',' | sed 's/.$//')
+	echo "processing following files:"
+	echo $FILES_IN_DIR
+	mkdir apt_output_"$file"
+
+	illuminaToVcf \
+		-ref $FASTA \
+		-manifest $MANIFEST \
+		-gsReport $FILES_IN_DIR \
+		-o apt_output_"$file"/illumina_"$GENOME".vcf.gz \
+		-hash \
+		-suppress
+
+	liftCoordinates \
+		-swapAlleleAB \
+		-faFile /home/pgccnv/somaticcnv_daniels/resources/hg38/hg38.fa \
+		$CHAIN \
+		apt_output_"$file"/illumina_"$GENOME".vcf.gz \
+		apt_output_"$file"/illumina_hg38.vcf.gz \
+		apt_output_"$file"/liftover.log
+
+	if [ $? -eq 0 ]; then
+		origLines=$(zcat apt_output_"$file"/illumina_"$GENOME".vcf.gz | wc -l)
+		liftLines=$(zcat apt_output_"$file"/illumina_hg38.vcf.gz | wc -l)
+		echo "Before liftover: $origLines records"
+		echo "After  liftover: $liftLines records"
+		rm apt_output_"$file"/illumina_"$GENOME".vcf.gz
+	else
+		exit 1
+	fi
+
+	zcat apt_output_"$file"/illumina_hg38.vcf.gz | awk '$1 ~ /^#/ {print $0;next} {print $0 | "sort -k1,1 -k2,2n"}' | bgzip > apt_output_"$file"/tmp.vcf.gz
+	mv apt_output_"$file"/tmp.vcf.gz apt_output_"$file"/illumina_hg38.vcf.gz
+	bcftools index apt_output_"$file"/illumina_hg38.vcf.gz
+done
